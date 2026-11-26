@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#14161a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Trascrittore</title>
+<style>
+/* Trascrittore: tutto sul dispositivo, nessun server.
+   Stile: taccuino del cronista — carta chiara, inchiostro scuro, un solo rosso per "registra". */
+:root{color-scheme:light dark;
+  --bg:light-dark(#f6f4ef,#121316);--card:light-dark(#ffffff,#1b1d21);--ink:light-dark(#16181c,#ecebe7);
+  --soft:light-dark(#5d6068,#a3a6ad);--line:light-dark(#e3e0d8,#2c2f35);--rec:#e5332a;--acc:light-dark(#1f5eff,#7aa2ff);
+  --hl:light-dark(#fff3c4,#3a3420)}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow-x:clip}
+main{max-width:860px;margin:0 auto;padding:20px max(4vw,14px) 60px}
+h1{font-size:32px;line-height:1.05;margin:8px 0 4px;letter-spacing:-.01em}
+.sub{color:var(--soft);margin:0 0 20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+.tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.tab{min-height:56px;border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:10px;font:inherit;font-weight:600;cursor:pointer;padding:8px}
+.tab small{display:block;font-weight:400;color:var(--soft);font-size:13px}
+.tab[aria-pressed=true]{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.tab:disabled{opacity:.45;cursor:not-allowed}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.stage{display:flex;align-items:center;gap:18px;margin-top:16px;flex-wrap:wrap}
+#recBtn{width:84px;height:84px;border-radius:50%;border:4px solid var(--rec);background:transparent;cursor:pointer;display:grid;place-items:center;flex:none}
+#recBtn span{width:52px;height:52px;border-radius:50%;background:var(--rec);transition:all .2s}
+#recBtn.on span{width:30px;height:30px;border-radius:6px}
+#recBtn:disabled{opacity:.4;cursor:wait}
+.timer{font-size:28px;font-variant-numeric:tabular-nums;font-weight:600}
+.meter{height:8px;width:180px;background:var(--line);border-radius:4px;overflow:hidden}
+.meter i{display:block;height:100%;width:0;background:var(--ink);transition:width .08s}
+.hint{color:var(--soft);font-size:14px;margin:8px 0 0}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:22px;text-align:center;margin-top:16px;cursor:pointer}
+.drop.over{border-color:var(--acc)}
+label.sel{display:flex;flex-direction:column;font-size:13px;color:var(--soft);gap:4px}
+select,button.b{font:inherit;font-size:16px;min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:0 12px}
+button.b{cursor:pointer;font-weight:600}
+button.b.pri{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+button.b:disabled{opacity:.45;cursor:not-allowed}
+:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.status{font-size:14px;color:var(--soft);margin-top:12px}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;width:0;background:var(--acc)}
+.err{color:var(--rec)}
+#segs{margin-top:12px}
+.seg{display:grid;grid-template-columns:64px minmax(0,1fr);gap:10px;padding:6px 4px;border-radius:8px}
+.seg.cur{background:var(--hl)}
+.seg button{font:inherit;font-size:13px;font-variant-numeric:tabular-nums;color:var(--acc);background:none;border:0;cursor:pointer;text-align:left;padding:2px 0;align-self:start}
+.seg .tx{outline:none;white-space:pre-wrap}
+.seg .tx:focus{box-shadow:0 1px 0 var(--acc)}
+.seg.pend .tx{color:var(--soft);font-style:italic}
+.empty{color:var(--soft);text-align:center;padding:24px 8px}
+audio{width:100%;margin-top:10px}
+details summary{cursor:pointer;font-weight:600;min-height:32px}
+.hist{list-style:none;padding:0;margin:8px 0 0}
+.hist li{display:flex;gap:8px;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding:8px 0}
+.hist li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hist small{color:var(--soft)}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.show{opacity:1}
+@media(max-width:600px){.tabs{grid-template-columns:minmax(0,1fr)}.tab{min-height:48px}h1{font-size:28px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Trascrittore</h1>
+  <p class="sub">Trascrizione fedele, parola per parola. L'audio non lascia mai il tuo dispositivo.</p>
+
+  <section class="card" aria-label="Sorgente audio">
+    <div class="tabs" role="group" aria-label="Sorgente">
+      <button class="tab" id="tMic" aria-pressed="true">Microfono<small>in tempo reale</small></button>
+      <button class="tab" id="tFile" aria-pressed="false">File<small>audio o video</small></button>
+      <button class="tab" id="tSys" aria-pressed="false">Audio del PC<small>call, video, app</small></button>
+    </div>
+
+    <div id="liveBox">
+      <div class="stage">
+        <button id="recBtn" aria-label="Avvia registrazione"><span></span></button>
+        <div>
+          <div class="timer" id="timer">00:00</div>
+          <div class="meter" aria-hidden="true"><i id="lvl"></i></div>
+        </div>
+      </div>
+      <label class="row hint" id="mixRow" hidden><input type="checkbox" id="mixMic" checked> Includi anche il mio microfono</label>
+      <p class="hint" id="liveHint">Premi il cerchio rosso e parla. Il testo compare a ogni pausa.</p>
+    </div>
+
+    <div id="fileBox" hidden>
+      <div class="drop" id="drop" tabindex="0" role="button">Trascina qui un file audio o video, oppure tocca per sceglierlo<br><small class="hint">MP3, WAV, M4A, MP4, MOV, OGG, WEBM…</small></div>
+      <input type="file" id="fileIn" accept="audio/*,video/*" hidden>
+    </div>
+
+    <div class="row" style="margin-top:16px">
+      <label class="sel">Modello<select id="model"></select></label>
+      <label class="sel">Lingua<select id="lang">
+        <option value="italian">Italiano</option><option value="english">Inglese</option><option value="spanish">Spagnolo</option>
+        <option value="french">Francese</option><option value="german">Tedesco</option><option value="portuguese">Portoghese</option>
+        <option value="">Rileva automaticamente</option>
+      </select></label>
+    </div>
+    <div class="status" id="status" aria-live="polite">Il modello si scarica al primo utilizzo, poi resta salvato nel browser.</div>
+    <div class="bar" id="barBox" hidden><i id="bar"></i></div>
+  </section>
+
+  <section class="card" aria-label="Trascrizione">
+    <div class="row">
+      <button class="b" id="bCopy">Copia</button>
+      <button class="b" id="bTxt">Scarica TXT</button>
+      <button class="b" id="bSrt">Scarica SRT</button>
+      <button class="b" id="bWav" hidden>Scarica audio</button>
+      <button class="b pri" id="bRedo" hidden title="Ritrascrive tutta la registrazione in un'unica passata, più precisa">Ritrascrivi con più precisione</button>
+      <button class="b" id="bNew">Nuova</button>
+    </div>
+    <label class="row hint"><input type="checkbox" id="showTs" checked> Orari nel TXT</label>
+    <audio id="player" controls hidden></audio>
+    <div id="segs"><p class="empty">La trascrizione apparirà qui. Puoi correggere il testo toccandolo; toccando l'orario riascolti quel punto.</p></div>
+  </section>
+
+  <section class="card">
+    <details id="histBox"><summary>Trascrizioni salvate</summary><ul class="hist" id="hist"></ul>
+      <p class="hint">Salvate solo in questo browser, su questo dispositivo. L'audio non viene salvato: scaricalo se ti serve.</p></details>
+  </section>
+  <p class="hint">Consiglio: sul telefono usa "Aggiungi a schermata Home" dal menu del browser per averla come un'app.</p>
+</main>
+<div class="toast" id="toast" role="status"></div>
+
+<script type="text/plain" id="workerSrc">
+import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.2';
+env.allowLocalModels = false;
+if (typeof caches === 'undefined') env.useBrowserCache = false;
+let asr = null, key = '';
+self.onmessage = async (e) => {
+  const m = e.data;
+  try {
+    if (m.type === 'load') {
+      const k = m.model + '|' + m.device;
+      if (asr && k === key) { self.postMessage({ type: 'ready' }); return; }
+      if (asr) { try { await asr.dispose(); } catch (_) {} asr = null; key = ''; }
+      const files = {};
+      asr = await pipeline('automatic-speech-recognition', m.model, {
+        device: m.device, dtype: m.dtype,
+        progress_callback: (p) => {
+          if (p.status === 'progress' && p.total) {
+            files[p.file] = [p.loaded, p.total];
+            let l = 0, t = 0; for (const f in files) { l += files[f][0]; t += files[f][1]; }
+            self.postMessage({ type: 'progress', loaded: l, total: t });
+          }
+        }
+      });
+      key = k;
+      self.postMessage({ type: 'ready' });
+    } else if (m.type === 'run') {
+      const o = { task: 'transcribe', return_timestamps: true, chunk_length_s: 30, stride_length_s: 5 };
+      if (m.language) o.language = m.language;
+      const out = await asr(m.audio, o);
+      self.postMessage({ type: 'result', id: m.id, text: out.text || '', chunks: out.chunks || [] });
+    }
+  } catch (err) {
+    self.postMessage({ type: 'error', id: m.id, message: String((err && err.message) || err) });
+  }
+};
+</script>
+
+<script>
+{
+const SR = 16000;
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (_) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} }
+};
+const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.platform));
+const canSys = !isMobile && !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+
+const MODELS = [
+  { id: 'onnx-community/whisper-tiny', name: 'Leggero (~40 MB, veloce, meno preciso)' },
+  { id: 'onnx-community/whisper-base', name: 'Equilibrato (~80 MB, consigliato su telefono)' },
+  { id: 'onnx-community/whisper-small', name: 'Preciso (~250 MB, consigliato su PC/Mac)' },
+  { id: 'onnx-community/whisper-large-v3-turbo', name: 'Massima fedeltà (~1,3 GB, PC/Mac con WebGPU)', gpu: true }
+];
+const HALLU = ['amara.org', 'qtss', 'grazie per la visione', 'grazie a tutti per la visione', 'thank you for watching', 'thanks for watching', 'iscriviti al canale', 'sottotitoli creati dalla comunità'];
+
+let gpu = null, worker = null, loaded = '', loading = null, nextId = 1;
+const waiting = new Map();
+let chain = Promise.resolve();
+let mode = 'mic', rec = null, segs = [], session = null, audioUrl = null, fullAudio = null, saveT = null;
+
+/* ---------- utilità ---------- */
+function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('show'), 1800); }
+function status(t, err) { const s = $('status'); s.textContent = t; s.classList.toggle('err', !!err); }
+function bar(p) { $('barBox').hidden = p == null; if (p != null) $('bar').style.width = Math.round(p * 100) + '%'; }
+function fmt(s, ms) {
+  s = Math.max(0, s || 0); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = Math.floor(s % 60);
+  const p = (n, l = 2) => String(n).padStart(l, '0');
+  if (ms) return p(h) + ':' + p(m) + ':' + p(x) + ',' + p(Math.floor((s % 1) * 1000), 3);
+  return (h ? h + ':' : '') + p(m) + ':' + p(x);
+}
+function concat(list, len) { const o = new Float32Array(len); let i = 0; for (const a of list) { o.set(a, i); i += a.length; } return o; }
+function rms(a, s = 0, e = a.length) { let t = 0; for (let i = s; i < e; i++) t += a[i] * a[i]; return Math.sqrt(t / Math.max(1, e - s)); }
+function downsample(buf, rate) {
+  if (rate === SR) return new Float32Array(buf);
+  const r = rate / SR, n = Math.floor(buf.length / r), o = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const s = Math.floor(i * r), e = Math.min(buf.length, Math.floor((i + 1) * r)); let t = 0; for (let j = s; j < e; j++) t += buf[j]; o[i] = t / Math.max(1, e - s); }
+  return o;
+}
+function peakFrame(a) { let p = 0; for (let i = 0; i + 480 <= a.length; i += 480) p = Math.max(p, rms(a, i, i + 480)); return p; }
+/* divide l'audio in pezzi da max 28 s, tagliando nel punto più silenzioso degli ultimi 6 s */
+function splitAtSilence(a, max = 28 * SR, look = 6 * SR, win = 1600) {
+  const parts = []; let s = 0;
+  while (s < a.length) {
+    let e = Math.min(a.length, s + max);
+    if (e < a.length) {
+      let best = e, be = Infinity;
+      for (let p = e - look; p <= e - win; p += win / 2) { let en = 0; for (let j = p; j < p + win; j++) en += a[j] * a[j]; if (en < be) { be = en; best = p + win / 2; } }
+      e = best;
+    }
+    parts.push({ start: s / SR, data: a.subarray(s, e) }); s = e;
+  }
+  return parts;
+}
+function clean(t) { return (t || '').replace(/\s+/g, ' ').trim(); }
+function isHallu(t) { const n = t.toLowerCase(); return !n.replace(/[\s.,!?…-]/g, '') || HALLU.some((h) => n.includes(h)); }
+function wav(a) {
+  const b = new ArrayBuffer(44 + a.length * 2), v = new DataView(b), w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + a.length * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, SR, true); v.setUint32(28, SR * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, a.length * 2, true);
+  for (let i = 0; i < a.length; i++) { const x = Math.max(-1, Math.min(1, a[i])); v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7fff, true); }
+  return new Blob([b], { type: 'audio/wav' });
+}
+function download(name, blob) { const u = URL.createObjectURL(blob), a = document.createElement('a'); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000); }
+
+/* ---------- modello (Web Worker) ---------- */
+async function detectGPU() {
+  try { if (!navigator.gpu) return null; const a = await navigator.gpu.requestAdapter(); return a ? { f16: a.features.has('shader-f16') } : null; } catch (_) { return null; }
+}
+function makeWorker() {
+  const url = URL.createObjectURL(new Blob([$('workerSrc').textContent], { type: 'text/javascript' }));
+  const w = new Worker(url, { type: 'module' });
+  w.onmessage = (e) => {
+    const m = e.data;
+    if (m.type === 'progress') { bar(m.loaded / m.total); status('Scarico il modello… ' + Math.round(m.loaded / 1048576) + ' di ' + Math.round(m.total / 1048576) + ' MB (solo la prima volta)'); }
+    else if (m.type === 'ready') { const r = waiting.get('load'); waiting.delete('load'); r && r.ok(); }
+    else if (m.type === 'result') { const r = waiting.get(m.id); waiting.delete(m.id); r && r.ok(m); }
+    else if (m.type === 'error') { const k = m.id == null ? 'load' : m.id; const r = waiting.get(k); waiting.delete(k); r && r.ko(new Error(m.message)); }
+  };
+  w.onerror = (e) => {
+    e.preventDefault && e.preventDefault();
+    const x = new Error(e.message || 'worker non avviato'); x.workerFail = true;
+    for (const [k, r] of waiting) { waiting.delete(k); r.ko(x); }
+  };
+  return w;
+}
+function ask(msg, k) { return new Promise((ok, ko) => { waiting.set(k, { ok, ko }); worker.postMessage(msg, msg.audio ? [msg.audio.buffer] : []); }); }
+
+/* Motore di riserva: se il browser non avvia il worker, il modello gira nella pagina stessa */
+const CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.2';
+let engine = 'worker', inline = null;
+async function inlineLoad(id, c) {
+  let T;
+  try { T = await import(CDN); } catch (_) { const x = new Error('download del motore non riuscito'); x.net = true; throw x; }
+  T.env.allowLocalModels = false;
+  if (typeof caches === 'undefined') T.env.useBrowserCache = false;
+  if (inline) { try { await inline.dispose(); } catch (_) {} inline = null; }
+  const files = {};
+  inline = await T.pipeline('automatic-speech-recognition', id, {
+    device: c.device, dtype: c.dtype,
+    progress_callback: (p) => {
+      if (p.status === 'progress' && p.total) {
+        files[p.file] = [p.loaded, p.total]; let l = 0, t = 0; for (const f in files) { l += files[f][0]; t += files[f][1]; }
+        bar(l / t); status('Scarico il modello… ' + Math.round(l / 1048576) + ' di ' + Math.round(t / 1048576) + ' MB (solo la prima volta)');
+      }
+    }
+  });
+}
+async function load(id, c) {
+  if (engine === 'inline') return inlineLoad(id, c);
+  if (!worker) { try { worker = makeWorker(); } catch (e) { const x = new Error(e.message); x.workerFail = true; throw x; } }
+  return ask({ type: 'load', model: id, ...c }, 'load');
+}
+async function run(audio, language) {
+  if (engine === 'inline') {
+    const o = { task: 'transcribe', return_timestamps: true, chunk_length_s: 30, stride_length_s: 5 };
+    if (language) o.language = language;
+    const out = await inline(audio, o);
+    return { text: out.text || '', chunks: out.chunks || [] };
+  }
+  const id = nextId++;
+  return ask({ type: 'run', id, audio, language }, id);
+}
+function where() {
+  if (!/^https?:$/.test(location.protocol)) return 'Stai aprendo il file direttamente dal computer: pubblicalo su GitHub Pages e apri il link https.';
+  let framed = true; try { framed = window.top !== window.self; } catch (_) {}
+  if (framed) return 'L\'app è aperta dentro un\'anteprima (per esempio nella chat di Claude), che blocca i download: aprila dal link GitHub Pages in una normale scheda del browser.';
+  return 'Controlla la connessione a internet (serve solo al primo utilizzo) e riprova. Se usi un blocco pubblicità o una rete aziendale, consenti cdn.jsdelivr.net e huggingface.co.';
+}
+function friendly(err) {
+  const m = String((err && err.message) || err);
+  if ((err && (err.net || err.workerFail)) || /fetch|network|load failed|import|cors|blocked/i.test(m)) return 'Non riesco a scaricare il motore di trascrizione. ' + where();
+  return m;
+}
+function cfg(modelId, device) {
+  if (device === 'webgpu') return { device, dtype: /large/.test(modelId) ? { encoder_model: 'fp16', decoder_model_merged: 'q4' } : { encoder_model: 'fp32', decoder_model_merged: 'q4' } };
+  return { device: 'wasm', dtype: 'q8' };
+}
+async function ensureModel() {
+  const id = $('model').value;
+  if (loaded === id) return;
+  if (loading) { await loading; if (loaded === id) return; }
+  loading = (async () => {
+    let dev = gpu ? 'webgpu' : 'wasm';
+    status('Preparo il motore di trascrizione…'); bar(0);
+    const tryLoad = async (d) => {
+      try { await load(id, cfg(id, d)); }
+      catch (err) {
+        if (!err.workerFail || engine !== 'worker') throw err;
+        engine = 'inline'; try { worker && worker.terminate(); } catch (_) {} worker = null;
+        status('Avvio il motore in modalità alternativa…');
+        await load(id, cfg(id, d));
+      }
+    };
+    try { await tryLoad(dev); }
+    catch (err) {
+      if (dev !== 'webgpu' || err.net) throw err;
+      dev = 'wasm'; status('Accelerazione grafica non disponibile, passo alla modalità compatibile…');
+      if (worker) { worker.terminate(); worker = null; }
+      await tryLoad('wasm');
+    }
+    loaded = id; bar(null); status('Motore pronto (' + (dev === 'webgpu' ? 'accelerato con la scheda video' : 'processore') + ').');
+  })();
+  try { await loading; } catch (err) { bar(null); loaded = ''; status(friendly(err), true); throw err; } finally { loading = null; }
+}
+function transcribe(audio) {
+  const p = chain.then(async () => {
+    await ensureModel();
+    return run(audio.slice(), $('lang').value || null);
+  });
+  chain = p.catch(() => {});
+  return p;
+}
+function addChunks(out, offset, endFallback) {
+  const items = [];
+  for (const c of out.chunks.length ? out.chunks : [{ timestamp: [0, null], text: out.text }]) {
+    const t = clean(c.text); if (!t || isHallu(t)) continue;
+    const ts = c.timestamp || [0, null];
+    items.push({ t: offset + (ts[0] || 0), e: ts[1] != null ? offset + ts[1] : endFallback, text: t });
+  }
+  return items;
+}
+
+/* ---------- trascrizione segmenti ---------- */
+function render() {
+  const box = $('segs');
+  if (!segs.length) { box.innerHTML = '<p class="empty">La trascrizione apparirà qui. Puoi correggere il testo toccandolo; toccando l\'orario riascolti quel punto.</p>'; return; }
+  box.textContent = '';
+  segs.forEach((s, i) => {
+    const r = document.createElement('div'); r.className = 'seg' + (s.pending ? ' pend' : ''); r.dataset.i = i;
+    const b = document.createElement('button'); b.textContent = fmt(s.t); b.title = 'Riascolta da qui';
+    b.onclick = () => { const p = $('player'); if (p.hidden) return; p.currentTime = s.t; p.play().catch(() => {}); };
+    const d = document.createElement('div'); d.className = 'tx'; d.textContent = s.pending ? 'sto trascrivendo…' : s.text;
+    if (!s.pending) { d.contentEditable = 'true'; d.spellcheck = true; d.oninput = () => { s.text = d.textContent; save(); }; }
+    r.append(b, d); box.append(r);
+  });
+}
+function scrollEnd() { const last = $('segs').lastElementChild; if (last && rec) last.scrollIntoView({ block: 'nearest' }); }
+function newSession(kind, title) {
+  session = { id: Date.now().toString(36), kind, title, date: new Date().toISOString() };
+  segs = []; render();
+  if (audioUrl) { URL.revokeObjectURL(audioUrl); audioUrl = null; }
+  $('player').hidden = true; $('bWav').hidden = true; $('bRedo').hidden = true; fullAudio = null;
+}
+function save() {
+  clearTimeout(saveT);
+  saveT = setTimeout(() => {
+    if (!session || !segs.some((s) => !s.pending && s.text)) return;
+    const h = store.get('trascrittore.hist', []).filter((x) => x.id !== session.id);
+    h.unshift({ ...session, segs: segs.filter((s) => !s.pending).map(({ t, e, text }) => ({ t, e, text })) });
+    store.set('trascrittore.hist', h.slice(0, 60)); renderHist();
+  }, 600);
+}
+function renderHist() {
+  const h = store.get('trascrittore.hist', []), ul = $('hist'); ul.textContent = '';
+  if (!h.length) { const li = document.createElement('li'); li.innerHTML = '<small>Nessuna trascrizione salvata.</small>'; ul.append(li); return; }
+  for (const x of h) {
+    const li = document.createElement('li'), sp = document.createElement('span'), sm = document.createElement('small');
+    sp.textContent = x.title + ' '; sm.textContent = new Date(x.date).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' }); sp.append(sm);
+    const o = document.createElement('button'); o.className = 'b'; o.textContent = 'Apri';
+    o.onclick = () => { if (rec) return; newSession(x.kind, x.title); session.id = x.id; session.date = x.date; segs = x.segs.map((s) => ({ ...s })); render(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+    const d = document.createElement('button'); d.className = 'b'; d.textContent = 'Elimina';
+    d.onclick = () => { store.set('trascrittore.hist', store.get('trascrittore.hist', []).filter((y) => y.id !== x.id)); renderHist(); };
+    const g = document.createElement('div'); g.className = 'row'; g.append(o, d); li.append(sp, g); ul.append(li);
+  }
+}
+
+/* ---------- file ---------- */
+async function decodeFile(file) {
+  const buf = await file.arrayBuffer();
+  const Ctx = window.AudioContext || window.webkitAudioContext, ctx = new Ctx();
+  try {
+    const ab = await new Promise((ok, ko) => { const p = ctx.decodeAudioData(buf, ok, ko); if (p && p.then) p.then(ok, ko); });
+    const len = Math.max(1, Math.ceil(ab.duration * SR)), off = new OfflineAudioContext(1, len, SR);
+    const src = off.createBufferSource(); src.buffer = ab; src.connect(off.destination); src.start();
+    return (await off.startRendering()).getChannelData(0);
+  } finally { ctx.close && ctx.close(); }
+}
+async function runWhole(audio, label) {
+  const parts = splitAtSilence(audio); segs = []; render();
+  let done = 0;
+  for (const part of parts) {
+    done++; status(label + ' — parte ' + done + ' di ' + parts.length + ' (' + fmt(part.start) + ')'); bar((done - 1) / parts.length);
+    if (peakFrame(part.data) < 0.004) continue;
+    const out = await transcribe(part.data);
+    segs.push(...addChunks(out, part.start, part.start + part.data.length / SR)); render(); save();
+  }
+  bar(null); status('Fatto. ' + segs.length + ' frasi, ' + fmt(audio.length / SR) + ' di audio.');
+}
+async function handleFile(file) {
+  if (!file || rec) return;
+  newSession('file', file.name);
+  audioUrl = URL.createObjectURL(file); const p = $('player'); p.src = audioUrl; p.hidden = false;
+  try {
+    status('Leggo il file…');
+    const audio = await decodeFile(file);
+    await runWhole(audio, 'Trascrivo "' + file.name + '"');
+  } catch (err) { bar(null); status(/decod|format|EncodingError/i.test(String(err && err.message)) ? 'Non riesco a leggere questo file: prova a convertirlo in MP3 o WAV.' : friendly(err), true); }
+}
+
+/* ---------- live: microfono / audio del PC ---------- */
+async function start() {
+  const sys = mode === 'sys', streams = [];
+  try {
+    if (sys) {
+      const s = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: { echoCancellation: false, noiseSuppression: false } });
+      if (!s.getAudioTracks().length) { s.getTracks().forEach((t) => t.stop()); throw new Error('Nessun audio condiviso: riprova e attiva "Condividi audio" (scheda o schermo intero).'); }
+      streams.push(s);
+      if ($('mixMic').checked) streams.push(await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }));
+    } else {
+      streams.push(await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }));
+    }
+  } catch (err) { status(err.name === 'NotAllowedError' ? 'Permesso negato. Consenti l\'accesso al ' + (sys ? 'condividi schermo/audio' : 'microfono') + ' nelle impostazioni del browser.' : err.message, true); streams.forEach((s) => s.getTracks().forEach((t) => t.stop())); return; }
+
+  newSession(mode, (sys ? 'Audio del PC ' : 'Registrazione ') + new Date().toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' }));
+  ensureModel().catch(() => {});
+  const Ctx = window.AudioContext || window.webkitAudioContext, ctx = new Ctx();
+  const mix = ctx.createGain(), proc = ctx.createScriptProcessor(4096, 1, 1), mute = ctx.createGain(); mute.gain.value = 0;
+  streams.forEach((s) => { if (s.getAudioTracks().length) ctx.createMediaStreamSource(s).connect(mix); });
+  mix.connect(proc); proc.connect(mute); mute.connect(ctx.destination);
+  rec = { ctx, proc, streams, all: [], total: 0, pre: [], preLen: 0, seg: [], segLen: 0, segStart: 0, speech: 0, silence: 0, noise: 0.003, t0: performance.now(), lock: null };
+  try { rec.lock = await navigator.wakeLock.request('screen'); } catch (_) {}
+  proc.onaudioprocess = (e) => onAudio(downsample(e.inputBuffer.getChannelData(0), ctx.sampleRate));
+  streams.forEach((s) => s.getTracks().forEach((t) => { t.onended = () => { if (rec) stop(); }; }));
+  $('recBtn').classList.add('on'); $('recBtn').setAttribute('aria-label', 'Ferma registrazione');
+  $('tMic').disabled = $('tFile').disabled = $('tSys').disabled = true;
+  rec.tick = setInterval(() => { $('timer').textContent = fmt((performance.now() - rec.t0) / 1000); }, 250);
+  status('Sto ascoltando… il testo compare a ogni pausa.');
+}
+function onAudio(x) {
+  const r = rec; if (!r) return;
+  r.all.push(x); r.total += x.length;
+  const lv = rms(x), dur = x.length / SR;
+  $('lvl').style.width = Math.min(100, lv * 600) + '%';
+  const speech = lv > Math.max(r.noise * 3, 0.006);
+  if (!speech) r.noise = r.noise * 0.95 + lv * 0.05;
+  if (!r.segLen && !speech) { r.pre.push(x); r.preLen += x.length; while (r.preLen - r.pre[0].length > 0.4 * SR) r.preLen -= r.pre.shift().length; return; }
+  if (!r.segLen) { r.segStart = (r.total - x.length - r.preLen) / SR; r.seg = r.pre; r.segLen = r.preLen; r.pre = []; r.preLen = 0; r.speech = 0; r.silence = 0; }
+  r.seg.push(x); r.segLen += x.length;
+  if (speech) { r.speech += dur; r.silence = 0; } else r.silence += dur;
+  const segDur = r.segLen / SR;
+  if ((r.silence >= 0.8 && segDur >= 2) || r.silence >= 1.5 || segDur >= 25) flush();
+}
+function flush() {
+  const r = rec; if (!r || !r.segLen) return;
+  const audio = concat(r.seg, r.segLen), start = r.segStart, speech = r.speech;
+  r.seg = []; r.segLen = 0; r.speech = 0; r.silence = 0;
+  if (speech < 0.25) return;
+  const ph = { t: start, e: start + audio.length / SR, text: '', pending: true }; segs.push(ph); render(); scrollEnd();
+  transcribe(audio).then((out) => {
+    const items = addChunks(out, start, ph.e), i = segs.indexOf(ph);
+    if (i >= 0) segs.splice(i, 1, ...items);
+    render(); scrollEnd(); save();
+  }).catch((err) => { const i = segs.indexOf(ph); if (i >= 0) segs.splice(i, 1); render(); status(friendly(err), true); });
+}
+function stop() {
+  const r = rec; if (!r) return;
+  flush(); rec = null;
+  clearInterval(r.tick); r.proc.onaudioprocess = null;
+  try { r.proc.disconnect(); r.ctx.close(); } catch (_) {}
+  r.streams.forEach((s) => s.getTracks().forEach((t) => { t.onended = null; t.stop(); }));
+  try { r.lock && r.lock.release(); } catch (_) {}
+  $('recBtn').classList.remove('on'); $('recBtn').setAttribute('aria-label', 'Avvia registrazione'); $('lvl').style.width = '0';
+  $('tMic').disabled = $('tFile').disabled = false; $('tSys').disabled = !canSys;
+  fullAudio = concat(r.all, r.total);
+  audioUrl = URL.createObjectURL(wav(fullAudio)); const p = $('player'); p.src = audioUrl; p.hidden = false;
+  $('bWav').hidden = false; $('bRedo').hidden = fullAudio.length < 3 * SR;
+  chain.then(() => status('Registrazione finita (' + fmt(fullAudio.length / SR) + '). Puoi correggere, esportare o ritrascrivere con più precisione.'));
+}
+
+/* ---------- export ---------- */
+function done() { return segs.filter((s) => !s.pending && clean(s.text)); }
+function asText() { const ts = $('showTs').checked; return done().map((s) => (ts ? '[' + fmt(s.t) + '] ' : '') + clean(s.text)).join(ts ? '\n' : ' '); }
+function asSrt() { return done().map((s, i) => (i + 1) + '\n' + fmt(s.t, 1) + ' --> ' + fmt(Math.max(s.e || s.t + 2, s.t + 0.5), 1) + '\n' + clean(s.text) + '\n').join('\n'); }
+function base() { return ((session && session.title) || 'trascrizione').replace(/\.[a-z0-9]+$/i, '').replace(/[\\/:*?"<>|]+/g, '-'); }
+
+/* ---------- interfaccia ---------- */
+function setMode(m) {
+  if (rec) return; mode = m;
+  $('tMic').setAttribute('aria-pressed', m === 'mic'); $('tFile').setAttribute('aria-pressed', m === 'file'); $('tSys').setAttribute('aria-pressed', m === 'sys');
+  $('liveBox').hidden = m === 'file'; $('fileBox').hidden = m !== 'file'; $('mixRow').hidden = m !== 'sys';
+  $('liveHint').textContent = m === 'sys'
+    ? 'Premi il cerchio rosso, scegli la scheda o lo schermo e attiva "Condividi audio". Funziona al meglio con Chrome o Edge.'
+    : 'Premi il cerchio rosso e parla. Il testo compare a ogni pausa.';
+}
+$('tMic').onclick = () => setMode('mic');
+$('tFile').onclick = () => setMode('file');
+$('tSys').onclick = () => setMode('sys');
+if (!canSys) { $('tSys').disabled = true; $('tSys').querySelector('small').textContent = isMobile ? 'non disponibile su telefono' : 'non supportato da questo browser'; }
+$('recBtn').onclick = () => { if (rec) stop(); else start(); };
+$('drop').onclick = () => $('fileIn').click();
+$('drop').onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('fileIn').click(); } };
+$('fileIn').onchange = (e) => { handleFile(e.target.files[0]); e.target.value = ''; };
+['dragover', 'dragenter'].forEach((t) => $('drop').addEventListener(t, (e) => { e.preventDefault(); $('drop').classList.add('over'); }));
+['dragleave', 'drop'].forEach((t) => $('drop').addEventListener(t, (e) => { e.preventDefault(); $('drop').classList.remove('over'); }));
+$('drop').addEventListener('drop', (e) => handleFile(e.dataTransfer.files[0]));
+$('bCopy').onclick = async () => { try { await navigator.clipboard.writeText(asText()); toast('Testo copiato'); } catch (_) { toast('Copia non riuscita'); } };
+$('bTxt').onclick = () => { if (!done().length) return toast('Niente da esportare'); download(base() + '.txt', new Blob([asText()], { type: 'text/plain;charset=utf-8' })); };
+$('bSrt').onclick = () => { if (!done().length) return toast('Niente da esportare'); download(base() + '.srt', new Blob([asSrt()], { type: 'text/plain;charset=utf-8' })); };
+$('bWav').onclick = () => { if (fullAudio) download(base() + '.wav', wav(fullAudio)); };
+$('bRedo').onclick = async () => {
+  if (!fullAudio || rec) return; $('bRedo').disabled = true;
+  try { await runWhole(fullAudio, 'Seconda passata'); toast('Trascrizione aggiornata'); } catch (err) { status(friendly(err), true); }
+  $('bRedo').disabled = false;
+};
+$('bNew').onclick = () => { if (rec) return; newSession(mode, 'Trascrizione'); session = null; $('timer').textContent = '00:00'; status('Pronto.'); };
+$('player').ontimeupdate = () => {
+  const t = $('player').currentTime; let cur = -1;
+  segs.forEach((s, i) => { if (!s.pending && t >= s.t && t < (s.e || s.t + 3)) cur = i; });
+  document.querySelectorAll('.seg').forEach((el) => el.classList.toggle('cur', +el.dataset.i === cur));
+};
+$('model').onchange = () => { store.set('trascrittore.model', $('model').value); if (!rec) ensureModel().catch(() => {}); };
+$('lang').onchange = () => store.set('trascrittore.lang', $('lang').value);
+
+(async () => {
+  gpu = await detectGPU();
+  for (const m of MODELS) {
+    const o = document.createElement('option'); o.value = m.id; o.textContent = m.name;
+    if (m.gpu && !(gpu && gpu.f16)) { o.disabled = true; o.textContent += ' — non disponibile qui'; }
+    $('model').append(o);
+  }
+  const def = isMobile ? MODELS[1].id : gpu ? MODELS[2].id : MODELS[1].id;
+  const saved = store.get('trascrittore.model', def);
+  $('model').value = [...$('model').options].some((o) => o.value === saved && !o.disabled) ? saved : def;
+  $('lang').value = store.get('trascrittore.lang', 'italian');
+  setMode('mic'); renderHist();
+  let framed = true; try { framed = window.top !== window.self; } catch (_) {}
+  if (framed || !/^https?:$/.test(location.protocol)) status(where(), true);
+  else if (!window.isSecureContext || !navigator.mediaDevices) status('Apri l\'app da un indirizzo https:// per usare il microfono (i file funzionano comunque).', true);
+})();
+}
+</script>
+</body>
+</html>
